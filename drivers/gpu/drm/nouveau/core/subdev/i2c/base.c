@@ -111,7 +111,7 @@ nouveau_i2c_port_create_(struct nouveau_object *parent,
 	snprintf(port->adapter.name, sizeof(port->adapter.name),
 		 "nouveau-%s-%d", device->name, index);
 	port->adapter.owner = THIS_MODULE;
-	port->adapter.dev.parent = &device->pdev->dev;
+	port->adapter.dev.parent = nv_device_base(device);
 	port->index = index;
 	port->func = func;
 	i2c_set_adapdata(&port->adapter, i2c);
@@ -197,7 +197,7 @@ static int
 nouveau_i2c_identify(struct nouveau_i2c *i2c, int index, const char *what,
 		     struct nouveau_i2c_board_info *info,
 		     bool (*match)(struct nouveau_i2c_port *,
-				   struct i2c_board_info *))
+				   struct i2c_board_info *, void *), void *data)
 {
 	struct nouveau_i2c_port *port = nouveau_i2c_find(i2c, index);
 	int i;
@@ -221,7 +221,7 @@ nouveau_i2c_identify(struct nouveau_i2c *i2c, int index, const char *what,
 		}
 
 		if (nv_probe_i2c(port, info[i].dev.addr) &&
-		    (!match || match(port, &info[i].dev))) {
+		    (!match || match(port, &info[i].dev, data))) {
 			nv_info(i2c, "detected %s: %s\n", what,
 				info[i].dev.type);
 			return i;

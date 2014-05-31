@@ -833,6 +833,11 @@ static int rapl_write_data_raw(struct rapl_domain *rd,
 	return 0;
 }
 
+static const struct x86_cpu_id energy_unit_quirk_ids[] = {
+	{ X86_VENDOR_INTEL, 6, 0x37},/* Valleyview */
+	{}
+};
+
 static int rapl_check_unit(struct rapl_package *rp, int cpu)
 {
 	u64 msr_val;
@@ -853,8 +858,11 @@ static int rapl_check_unit(struct rapl_package *rp, int cpu)
 	 * time unit: 1/time_unit_divisor Seconds
 	 */
 	value = (msr_val & ENERGY_UNIT_MASK) >> ENERGY_UNIT_OFFSET;
-	rp->energy_unit_divisor = 1 << value;
-
+	/* some CPUs have different way to calculate energy unit */
+	if (x86_match_cpu(energy_unit_quirk_ids))
+		rp->energy_unit_divisor = 1000000 / (1 << value);
+	else
+		rp->energy_unit_divisor = 1 << value;
 
 	value = (msr_val & POWER_UNIT_MASK) >> POWER_UNIT_OFFSET;
 	rp->power_unit_divisor = 1 << value;
@@ -939,10 +947,11 @@ static void package_power_limit_irq_restore(int package_id)
 }
 
 static const struct x86_cpu_id rapl_ids[] = {
-	{ X86_VENDOR_INTEL, 6, 0x2a},/* SNB */
-	{ X86_VENDOR_INTEL, 6, 0x2d},/* SNB EP */
-	{ X86_VENDOR_INTEL, 6, 0x3a},/* IVB */
-	{ X86_VENDOR_INTEL, 6, 0x45},/* HSW */
+	{ X86_VENDOR_INTEL, 6, 0x2a},/* Sandy Bridge */
+	{ X86_VENDOR_INTEL, 6, 0x2d},/* Sandy Bridge EP */
+	{ X86_VENDOR_INTEL, 6, 0x37},/* Valleyview */
+	{ X86_VENDOR_INTEL, 6, 0x3a},/* Ivy Bridge */
+	{ X86_VENDOR_INTEL, 6, 0x45},/* Haswell */
 	/* TODO: Add more CPU IDs after testing */
 	{}
 };
@@ -1138,6 +1147,11 @@ static int rapl_check_domain(int cpu, int domain)
 	if (rdmsrl_safe_on_cpu(cpu, msr, &val1))
 		return -ENODEV;
 
+	/* PP1/uncore/graphics domain may not be active at the time of
+	 * driver loading. So skip further checks.
+	 */
+	if (domain == RAPL_DOMAIN_PP1)
+		return 0;
 	/* energy counters roll slowly on some domains */
 	while (++retry < 10) {
 		usleep_range(10000, 15000);
@@ -1360,6 +1374,9 @@ static int __init rapl_init(void)
 
 		return -ENODEV;
 	}
+
+	cpu_notifier_register_begin();
+
 	/* prevent CPU hotplug during detection */
 	get_online_cpus();
 	ret = rapl_detect_topology();
@@ -1371,20 +1388,23 @@ static int __init rapl_init(void)
 		ret = -ENODEV;
 		goto done;
 	}
-	register_hotcpu_notifier(&rapl_cpu_notifier);
+	__register_hotcpu_notifier(&rapl_cpu_notifier);
 done:
 	put_online_cpus();
+	cpu_notifier_register_done();
 
 	return ret;
 }
 
 static void __exit rapl_exit(void)
 {
+	cpu_notifier_register_begin();
 	get_online_cpus();
-	unregister_hotcpu_notifier(&rapl_cpu_notifier);
+	__unregister_hotcpu_notifier(&rapl_cpu_notifier);
 	rapl_unregister_powercap();
 	rapl_cleanup_data();
 	put_online_cpus();
+	cpu_notifier_register_done();
 }
 
 module_init(rapl_init);

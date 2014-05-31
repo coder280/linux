@@ -7,6 +7,8 @@
  * 30 May 2002:	Cleanup, Robert M. Love <rml@tech9.net>
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/audit.h>
 #include <linux/capability.h>
 #include <linux/mm.h>
@@ -42,15 +44,10 @@ __setup("no_file_caps", file_caps_disable);
 
 static void warn_legacy_capability_use(void)
 {
-	static int warned;
-	if (!warned) {
-		char name[sizeof(current->comm)];
+	char name[sizeof(current->comm)];
 
-		printk(KERN_INFO "warning: `%s' uses 32-bit capabilities"
-		       " (legacy support in use)\n",
-		       get_task_comm(name, current));
-		warned = 1;
-	}
+	pr_info_once("warning: `%s' uses 32-bit capabilities (legacy support in use)\n",
+		     get_task_comm(name, current));
 }
 
 /*
@@ -71,16 +68,10 @@ static void warn_legacy_capability_use(void)
 
 static void warn_deprecated_v2(void)
 {
-	static int warned;
+	char name[sizeof(current->comm)];
 
-	if (!warned) {
-		char name[sizeof(current->comm)];
-
-		printk(KERN_INFO "warning: `%s' uses deprecated v2"
-		       " capabilities in a way that may be insecure.\n",
-		       get_task_comm(name, current));
-		warned = 1;
-	}
+	pr_info_once("warning: `%s' uses deprecated v2 capabilities in a way that may be insecure\n",
+		     get_task_comm(name, current));
 }
 
 /*
@@ -277,7 +268,7 @@ SYSCALL_DEFINE2(capset, cap_user_header_t, header, const cap_user_data_t, data)
 	if (ret < 0)
 		goto error;
 
-	audit_log_capset(pid, new, current_cred());
+	audit_log_capset(new, current_cred());
 
 	return commit_creds(new);
 
@@ -380,7 +371,7 @@ bool has_capability_noaudit(struct task_struct *t, int cap)
 bool ns_capable(struct user_namespace *ns, int cap)
 {
 	if (unlikely(!cap_valid(cap))) {
-		printk(KERN_CRIT "capable() called with invalid cap=%u\n", cap);
+		pr_crit("capable() called with invalid cap=%u\n", cap);
 		BUG();
 	}
 
